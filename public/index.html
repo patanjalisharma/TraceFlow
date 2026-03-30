@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>API Trace Debugger</title>
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #0f172a, #020617);
+      color: #e2e8f0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .container {
+      background: rgba(30, 41, 59, 0.8);
+      backdrop-filter: blur(10px);
+      padding: 30px;
+      border-radius: 16px;
+      width: 420px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #334155;
+      margin-bottom: 12px;
+      outline: none;
+      background: #020617;
+      color: #e2e8f0;
+    }
+
+    input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 1px #3b82f6;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(59,130,246,0.4);
+    }
+
+    .examples {
+      margin: 15px 0;
+    }
+
+    .examples p {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+
+    .chip {
+      display: inline-block;
+      background: #020617;
+      border: 1px solid #334155;
+      padding: 6px 10px;
+      border-radius: 999px;
+      margin: 4px 4px 0 0;
+      font-size: 12px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .chip:hover {
+      background: #3b82f6;
+      color: white;
+      border-color: #3b82f6;
+    }
+
+    .result {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #020617;
+      border: 1px solid #334155;
+    }
+
+    .success {
+      color: #22c55e;
+    }
+
+    .failure {
+      color: #ef4444;
+    }
+
+    .step {
+      padding: 6px 0;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .step:last-child {
+      border-bottom: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+    <h2>Trace Debugger</h2>
+
+    <button onclick="simulateRequest()">Simulate Request</button>
+
+    <br><br>
+
+    <input id="traceInput" placeholder="Paste or select a traceId..." />
+
+    <div class="examples">
+      <p>Quick test IDs:</p>
+      <div class="chip" onclick="fillTrace(this)">
+        c4b6fc13-f7f9-4537-bb0c-7ed92041b275
+      </div>
+      <div class="chip" onclick="fillTrace(this)">
+        11a67942-4633-4426-962b-168089685a70
+      </div>
+    </div>
+
+    <button onclick="fetchLogs()">Analyze Trace</button>
+
+    <div class="result" id="result"></div>
+  </div>
+
+
+  <script>
+
+
+function fillTrace(el) {
+      const value = el.innerText;
+      document.getElementById("traceInput").value = value;
+    }
+    async function simulateRequest() {
+  const resultDiv = document.getElementById("result");
+
+  resultDiv.innerHTML = "Simulating...";
+
+  try {
+    const res = await fetch("/simulate", {
+      method: "POST"
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      resultDiv.innerHTML = "Simulating Failed. Retry";
+      return;
+    }
+
+    const traceId = data.traceId;
+
+    // auto-fill input
+    document.getElementById("traceInput").value = traceId;
+
+    // auto-fetch logs
+    fetchLogs();
+
+  } catch (err) {
+    resultDiv.innerHTML = "Error running simulation";
+  }
+}
+    async function fetchLogs() {
+      const traceId = document.getElementById("traceInput").value;
+      const resultDiv = document.getElementById("result");
+
+      if (!traceId) {
+        resultDiv.innerHTML = "<p>Please enter a traceId</p>";
+        return;
+      }
+
+      resultDiv.innerHTML = "Loading...";
+
+      try {
+        const res = await fetch(`/logs/${traceId}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          resultDiv.innerHTML = `<p>${data.message || "Error"}</p>`;
+          return;
+        }
+
+        let html = `
+          <p><strong>Trace:</strong> ${data.traceId}</p>
+          <p><strong>Status:</strong> 
+            <span class="${data.status === "success" ? "success" : "failure"}">
+              ${data.status.toUpperCase()}
+            </span>
+          </p>
+        `;
+
+        if (data.failedAt) {
+          html += `<p><strong>Failed At:</strong> ${data.failedAt}</p>`;
+        }
+
+        html += `<div><strong>Flow:</strong></div>`;
+
+        data.steps.forEach(step => {
+          html += `
+            <div class="step">
+              ${step.status === "success" ? "✔️" : "❌"} ${step.service}
+            </div>
+          `;
+        });
+
+        resultDiv.innerHTML = html;
+
+      } catch (err) {
+        resultDiv.innerHTML = `<p>Error fetching logs</p>`;
+      }
+    }
+  </script>
+
+</body>
+</html>
