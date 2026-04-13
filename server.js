@@ -1,5 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
+import rateLimit from "express-rate-limit";
 import { connectDB } from "./src/config/db.js";
 import { Log } from "./src/models/Log.js";
 import { traceMiddleware } from "./src/middlewares/trace.middlware.js";
@@ -8,8 +9,36 @@ import { orderService } from "./src/services/order.service.js";
 import { paymentService } from "./src/services/payment.service.js";
 dotenv.config();
 const app = express();
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, 
+//   max: 15, 
+//   message: {
+//     status: "failure",
+//     message: "Too many requests, try again later",
+//   },
+// });
+
+
+const simulateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: {
+    status: "failure",
+     message: "Too many requests, try again later",
+  },
+}); 
+
+const logsLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 60,
+  message: {
+    status: "failure",
+     message: "Too many requests, try again later",
+  },
+});
 
 app.use(express.json());
+//app.use(limiter);
 app.use(traceMiddleware);
 app.use(express.static("public"))
 app.get("/health", (req, res) => {
@@ -29,7 +58,7 @@ const port = process.env.PORT || 3000;
 //     res.json("Log entry created")
 //     })
 
-app.post("/simulate", async (req, res) => {
+app.post("/simulate",simulateLimiter, async (req, res) => {
   const traceId = req.traceId;
 
   try {
@@ -71,7 +100,7 @@ app.post("/simulate", async (req, res) => {
   }
 });
 
-app.get("/logs/:traceId", async (req, res) => {
+app.get("/logs/:traceId", logsLimiter, async (req, res) => {
   const { traceId } = req.params;
 
   try {

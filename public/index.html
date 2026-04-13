@@ -165,10 +165,16 @@ function fillTrace(el) {
 
     const data = await res.json();
 
-    if (!res.ok) {
-      resultDiv.innerHTML = "Simulating Failed. Retry";
-      return;
-    }
+    if (res.status === 429) {
+  resultDiv.innerHTML = "Too many requests. Try again later.";
+  return;
+}
+
+if (!res.ok) {
+  const data = await res.json();
+  resultDiv.innerHTML = `Simulation failed at ${data.failedAt || "unknown step"}`;
+  return;
+}
 
     const traceId = data.traceId;
 

@@ -1,8 +1,17 @@
 import { v4 as uuidv4 } from 'uuid';
 
 export function traceMiddleware(req, res, next) {
-    const traceId = uuidv4();
+    let traceId = req.headers["x-trace-id"];
+
+    if (!traceId) {
+        traceId = uuidv4();
+    }
+
     req.traceId = traceId;
-    console.log(`TraceId: ${req.traceId}`)
+
+    console.log(`[${req.method} ${req.url}] TraceId: ${traceId}`);
+
+    res.setHeader("x-trace-id", traceId);
+
     next();
 }
