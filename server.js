@@ -4,140 +4,76 @@ import rateLimit from "express-rate-limit";
 import { connectDB } from "./src/config/db.js";
 import { Log } from "./src/models/Log.js";
 import { traceMiddleware } from "./src/middlewares/trace.middlware.js";
+import fs from "fs";
+const services = JSON.parse(
+  fs.readFileSync(new URL("./services.json", import.meta.url)),
+);
 import axios from "axios";
-// import { authService } from "./src/services/auth.service.js";
- //import { orderService } from "./src/services/order.service.js";
- //import { paymentService } from "./src/services/payment.service.js";
 dotenv.config();
 const app = express();
-// const limiter = rateLimit({
-//   windowMs: 15 * 60 * 1000, 
-//   max: 15, 
-//   message: {
-//     status: "failure",
-//     message: "Too many requests, try again later",
-//   },
-// });
-
-
-const simulateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 15,
-  message: {
-    status: "failure",
-     message: "Too many requests, try again later",
-  },
-}); 
-
 const logsLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 60,
   message: {
     status: "failure",
-     message: "Too many requests, try again later",
+    message: "Too many requests, try again later",
   },
 });
-
 app.use(express.json());
-//app.use(limiter);
 app.use(traceMiddleware);
-app.use(express.static("public"))
+app.use(express.static("public"));
 app.get("/health", (req, res) => {
   res.json("Everything is fine");
 });
-
 const port = process.env.PORT || 3000;
+const limiters = {
+  auth: rateLimit({ windowMs: 60 * 1000, max: 3 }),
+  order: rateLimit({ windowMs: 60 * 1000, max: 5 }),
+  payment: rateLimit({ windowMs: 60 * 1000, max: 2 }),
+};
+app.use("/:service", (req, res, next) => {
+  const limiter = limiters[req.params.service];
+  if (limiter) return limiter(req, res, next);
+  next();
+});
+const gatewayHandler = async (req, res) => {
+  const service = req.params.service;
+  const baseURL = services[service];
 
-// app.post("/test", (req, res) => {
-//     Log.create({
-//         traceId: "12345",
-//         service: "test-service",
-//         status: "success",
-//         message: "Test log entry",
-//         latency: 100
-//     })
-//     res.json("Log entry created")
-//     })
+  if (!baseURL) {
+    return res.status(404).json({ error: "Service not found" });
+  }
 
-app.post("/simulate",simulateLimiter, async (req, res) => {
-  const traceId = req.traceId;
+  const path = req.originalUrl.replace(`/${service}`, "");
 
   try {
-    const authResponse = await axios.post(
-  "http://localhost:3001/auth",
-  {},
-  {
-    headers: {
-      "x-trace-id": traceId,
-    },
-    validateStatus: () => true, // important
-  }
-);
-
-const authResult = authResponse.data;
-    if (!authResult.success) {
-      return res.status(401).json({
-        traceId,
-        failedAt: "auth-service",
-        status: "failure",
-      });
-    }
-    const headers = {
-  "x-trace-id": traceId,
-};
-
-// ORDER SERVICE
-const orderResponse = await axios.post(
-  "http://localhost:3002/order",
-  {},
-  {
-    headers,
-    validateStatus: () => true,
-  }
-);
-
-if (!orderResponse.data.success) {
-  return res.status(400).json({
-    traceId,
-    failedAt: "order-service",
-    status: "failure",
-  });
-}
-
-// PAYMENT SERVICE
-const paymentResponse = await axios.post(
-  "http://localhost:3003/payment",
-  {},
-  {
-    headers,
-    validateStatus: () => true,
-  }
-);
-
-if (!paymentResponse.data.success) {
-  return res.status(402).json({
-    traceId,
-    failedAt: "payment-service",
-    status: "failure",
-  });
-}
-
-    return res.json({
-      traceId,
-      status: "success",
+    const response = await axios({
+      method: req.method,
+      url: baseURL + path,
+      data: req.body,
+      headers: {
+        "Content-Type": "application/json",
+        "x-trace-id": req.traceId,
+      },
+      validateStatus: () => true,
     });
+
+    await Log.create({
+      traceId: req.traceId,
+      service,
+      endpoint: path,
+      method: req.method,
+      status: response.data?.status === "failure" ? "failure" : "success",
+      latency: Date.now() - req.startTime,
+    });
+    res.status(response.status).json(response.data);
   } catch (error) {
-    return res.status(500).json({
-      traceId,
-      status: "failure",
+    res.status(500).json({
+      error: "Service error",
       message: error.message,
     });
   }
-});
-
-
-
-
+};
 app.get("/logs/:traceId", logsLimiter, async (req, res) => {
   const { traceId } = req.params;
 
@@ -179,6 +115,7 @@ app.get("/logs/:traceId", logsLimiter, async (req, res) => {
     });
   }
 });
+app.use("/:service", gatewayHandler);
 
 app.listen(port, () => {
   console.log(`Server running on ${port}`);

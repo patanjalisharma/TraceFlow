@@ -9,7 +9,27 @@ const app = express();
 app.use(express.json());
 
 app.post("/payment", paymentController);
+const shouldFail = (probability) => {
+  return Math.random() < probability;
+};
+app.post("/pay", (req, res) => {
+  const traceId = req.headers["x-trace-id"];
 
+  if (shouldFail(0.25)) {
+    return res.status(402).json({
+      status: "failure",
+      message: "Payment failed (insufficient funds)",
+      traceId
+    });
+  }
+
+  res.json({
+    status: "success",
+    message: "Payment processed successfully",
+    transactionId: Math.floor(Math.random() * 100000),
+    traceId
+  });
+});
 app.get("/health", (req, res) => {
   res.json({ service: "payment-service", status: "running" });
 });

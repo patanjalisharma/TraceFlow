@@ -1,0 +1,5 @@
+{
+  "auth": "http://localhost:3001",
+  "order": "http://localhost:3002",
+  "payment": "http://localhost:3003"
+}
