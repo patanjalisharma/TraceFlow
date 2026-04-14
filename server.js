@@ -4,9 +4,10 @@ import rateLimit from "express-rate-limit";
 import { connectDB } from "./src/config/db.js";
 import { Log } from "./src/models/Log.js";
 import { traceMiddleware } from "./src/middlewares/trace.middlware.js";
-import { authService } from "./src/services/auth.service.js";
-import { orderService } from "./src/services/order.service.js";
-import { paymentService } from "./src/services/payment.service.js";
+import axios from "axios";
+// import { authService } from "./src/services/auth.service.js";
+ //import { orderService } from "./src/services/order.service.js";
+ //import { paymentService } from "./src/services/payment.service.js";
 dotenv.config();
 const app = express();
 // const limiter = rateLimit({
@@ -62,7 +63,18 @@ app.post("/simulate",simulateLimiter, async (req, res) => {
   const traceId = req.traceId;
 
   try {
-    const authResult = await authService(traceId);
+    const authResponse = await axios.post(
+  "http://localhost:3001/auth",
+  {},
+  {
+    headers: {
+      "x-trace-id": traceId,
+    },
+    validateStatus: () => true, // important
+  }
+);
+
+const authResult = authResponse.data;
     if (!authResult.success) {
       return res.status(401).json({
         traceId,
@@ -70,22 +82,45 @@ app.post("/simulate",simulateLimiter, async (req, res) => {
         status: "failure",
       });
     }
-    const orderResult = await orderService(traceId);
-    if (!orderResult.success) {
-      return res.status(400).json({
-        traceId,
-        failedAt: "order-service",
-        status: "failure",
-      });
-    }
-    const paymentResult = await paymentService(traceId);
-    if (!paymentResult.success) {
-      return res.status(402).json({
-        traceId,
-        failedAt: "payment-service",
-        status: "failure",
-      });
-    }
+    const headers = {
+  "x-trace-id": traceId,
+};
+
+// ORDER SERVICE
+const orderResponse = await axios.post(
+  "http://localhost:3002/order",
+  {},
+  {
+    headers,
+    validateStatus: () => true,
+  }
+);
+
+if (!orderResponse.data.success) {
+  return res.status(400).json({
+    traceId,
+    failedAt: "order-service",
+    status: "failure",
+  });
+}
+
+// PAYMENT SERVICE
+const paymentResponse = await axios.post(
+  "http://localhost:3003/payment",
+  {},
+  {
+    headers,
+    validateStatus: () => true,
+  }
+);
+
+if (!paymentResponse.data.success) {
+  return res.status(402).json({
+    traceId,
+    failedAt: "payment-service",
+    status: "failure",
+  });
+}
 
     return res.json({
       traceId,
@@ -99,6 +134,9 @@ app.post("/simulate",simulateLimiter, async (req, res) => {
     });
   }
 });
+
+
+
 
 app.get("/logs/:traceId", logsLimiter, async (req, res) => {
   const { traceId } = req.params;
